@@ -1,29 +1,31 @@
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
-import IndexHistoryView from './assets/view/IndexHistoryView';
-import HomeView from './assets/view/HomeView';
-import ShortenUrlView from './assets/view/ShortenUrlView';
-import './index.css'
+import { useEffect, useMemo, useState } from 'react';
+import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { createLink, formatDate, getLinks, isValidUrl, publicUrl, removeLink, type ShortLink } from './lib/shortener';
+import './index.css';
 
-const App: React.FC = () => {
-    return (
-        <div>
-            <nav className=''>
-                <ul>
-                    <li><Link to="/">Inicio</Link></li>
-                    <li><Link to="/history">Historial de URLs</Link></li>
-                    <li><Link to="/shorten-url">Acortar URL</Link></li>
-                </ul>
-                
-            </nav>
+const Icon = ({ children }: { children: string }) => <span className="material-symbols-rounded" aria-hidden="true">{children}</span>;
 
-            <Routes>
-                <Route path="/" element={<HomeView />} />
-                <Route path="/history" element={<IndexHistoryView />} />
-                <Route path="/shorten-url" element={<ShortenUrlView />} />
-            </Routes>
-        </div>
-    );
-};
+function Layout() {
+  const location = useLocation();
+  const [dark, setDark] = useState(() => localStorage.getItem('orbit-theme') === 'dark');
+  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('orbit-theme', dark ? 'dark' : 'light'); }, [dark]);
+  const nav = [{ to: '/', label: 'Visão geral', icon: 'grid_view' }, { to: '/links', label: 'Meus links', icon: 'link' }];
+  return <div className="app-shell"><aside className="sidebar"><Link className="brand" to="/"><span className="brand-mark"><Icon>orbit</Icon></span><span>orbit<span className="brand-dot">.</span></span></Link><p className="eyebrow">WORKSPACE</p><nav>{nav.map(item => <Link key={item.to} className={location.pathname === item.to ? 'nav-item active' : 'nav-item'} to={item.to}><Icon>{item.icon}</Icon>{item.label}</Link>)}</nav><div className="sidebar-bottom"><div className="tip-card"><Icon>auto_awesome</Icon><strong>Link mais curto.<br />Impacto maior.</strong><span>Crie links que merecem ser clicados.</span></div><button className="theme-toggle" onClick={() => setDark(v => !v)}><Icon>{dark ? 'light_mode' : 'dark_mode'}</Icon>{dark ? 'Modo claro' : 'Modo escuro'}</button><small>Orbit v1.0 · Feito para compartilhar</small></div></aside><main className="main"><header className="topbar"><div><span className="breadcrumb">Workspace <b>/</b> {location.pathname === '/links' ? 'Meus links' : 'Visão geral'}</span></div><div className="top-actions"><span className="status"><i /> Tudo funcionando</span><div className="avatar">OR</div></div></header><Routes><Route path="/" element={<Dashboard />} /><Route path="/links" element={<Links />} /><Route path="/s/:slug" element={<Redirect />} /></Routes></main></div>;
+}
 
-export default App;
+function Dashboard() {
+  const [links, setLinks] = useState<ShortLink[]>(getLinks);
+  const [url, setUrl] = useState(''); const [alias, setAlias] = useState(''); const [error, setError] = useState(''); const [created, setCreated] = useState<ShortLink | null>(null); const [copied, setCopied] = useState(false);
+  const refresh = () => setLinks(getLinks());
+  const submit = async (e: React.FormEvent) => { e.preventDefault(); setError(''); setCreated(null); if (!isValidUrl(url)) { setError('Cole uma URL válida começando com https://'); return; } try { const link = await createLink(url, alias); setCreated(link); setUrl(''); setAlias(''); refresh(); } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível criar o link.'); } };
+  const copy = async (value: string) => { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1800); };
+  return <div className="page"><section className="hero"><div className="hero-copy"><span className="pill"><span className="pulse" /> Seu espaço para links</span><h1>Menos caracteres.<br /><em>Mais alcance.</em></h1><p>Transforme URLs longas em links memoráveis, acompanhe seus compartilhamentos e faça cada clique contar.</p></div><div className="hero-orbit"><div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" /><span className="orbit-core"><Icon>link</Icon></span><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /></div></section><section className="create-card"><div className="section-heading"><div><span className="number">01</span><h2>Crie seu próximo link</h2></div><span className="secure"><Icon>lock</Icon> Seguro e gratuito</span></div><form onSubmit={submit}><label>URL de destino<input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://seu-site.com/aquela-url-enorme" /></label><label className="alias-field">Alias personalizado <span>opcional</span><div className="alias-input"><span>orbit.to/</span><input value={alias} onChange={e => setAlias(e.target.value.replace(/[^a-zA-Z0-9-_]/g, '').slice(0, 24))} placeholder="seu-alias" /></div></label><button className="primary-button" type="submit">Encurtar URL <Icon>arrow_forward</Icon></button></form>{error && <p className="form-error"><Icon>error</Icon>{error}</p>}{created && <div className="result"><div><span className="result-label">SEU LINK ESTÁ PRONTO</span><strong>{publicUrl(created.slug)}</strong></div><button onClick={() => copy(publicUrl(created.slug))}>{copied ? <><Icon>check</Icon> Copiado</> : <><Icon>content_copy</Icon> Copiar link</>}</button></div>}</section><section className="stats"><div><span><Icon>link</Icon> Links criados</span><strong>{links.length}</strong></div><div><span><Icon>touch_app</Icon> Cliques totais</span><strong>{links.reduce((sum, link) => sum + link.clicks, 0)}</strong></div><div><span><Icon>trending_up</Icon> Taxa média</span><strong>{links.length ? '100%' : '—'}</strong></div></section><section className="recent"><div className="section-heading"><div><span className="number">02</span><h2>Atividade recente</h2></div><Link className="text-link" to="/links">Ver todos <Icon>arrow_forward</Icon></Link></div>{links.length === 0 ? <div className="empty"><Icon>north_east</Icon><p>Seu primeiro link está a um clique de distância.</p><span>Comece encurtando uma URL acima.</span></div> : <div className="link-list">{links.slice(0, 3).map(link => <LinkRow key={link.id} link={link} onCopy={copy} />)}</div>}</section></div>;
+}
+
+function LinkRow({ link, onCopy }: { link: ShortLink; onCopy: (url: string) => void }) { return <div className="link-row"><div className="link-icon"><Icon>link</Icon></div><div className="link-info"><strong>{publicUrl(link.slug)}</strong><span>{link.originalUrl}</span></div><span className="date">{formatDate(link.createdAt)}</span><button className="icon-button" onClick={() => onCopy(publicUrl(link.slug))} aria-label="Copiar link"><Icon>content_copy</Icon></button></div>; }
+
+function Links() { const [links, setLinks] = useState(getLinks); const [query, setQuery] = useState(''); const filtered = useMemo(() => links.filter(l => `${l.slug} ${l.originalUrl}`.toLowerCase().includes(query.toLowerCase())), [links, query]); return <div className="page"><div className="page-title"><div><span className="pill">LINK LIBRARY</span><h1>Meus links</h1><p>Todos os seus atalhos, em um só lugar.</p></div><Link className="primary-button" to="/"><Icon>add</Icon> Criar link</Link></div><div className="toolbar"><div className="search"><Icon>search</Icon><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por alias ou URL..." /></div><span>{filtered.length} {filtered.length === 1 ? 'link' : 'links'}</span></div>{filtered.length ? <div className="link-list full-list">{filtered.map(link => <div className="link-row" key={link.id}><div className="link-icon"><Icon>link</Icon></div><div className="link-info"><strong>{publicUrl(link.slug)}</strong><span>{link.originalUrl}</span></div><span className="date">{formatDate(link.createdAt)}</span><button className="icon-button" onClick={() => { removeLink(link.id); setLinks(getLinks()); }} aria-label="Excluir link"><Icon>delete</Icon></button></div>)}</div> : <div className="empty"><Icon>search_off</Icon><p>Nenhum link encontrado.</p><span>Tente outra busca ou crie um novo atalho.</span></div>}</div>; }
+
+function Redirect() { const { slug } = useParams(); const link = getLinks().find(item => item.slug === slug); const navigate = useNavigate(); useEffect(() => { if (link) window.location.replace(link.originalUrl); else navigate('/'); }, [link, navigate]); return <div className="redirect"><span className="brand-mark"><Icon>orbit</Icon></span><h2>Preparando seu salto...</h2><p>O link está levando você ao destino.</p></div>; }
+
+export default function App() { return <Layout />; }
